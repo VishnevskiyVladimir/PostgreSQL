@@ -1,0 +1,134 @@
+Add lessons 16-25 theory  and lesson 26 practice.
+
+ Normalization
+Changing DB structure according to so called normal forms in order to reduce data redundancy.
+Redundancy is storing of the same data in different places of database.
+There are 9 normal forms (including UNF - not normalised database), in practice only first,second,third are used,  because increasing of level of normalisation decreases performance.
+1NF - no repetitive records, atomic values in columns, column contain data of the same data type
+2NF - 1NF + every table has primary key
+3NF - 2NF + no transient dependencies between columns
+Decomposing - splitting tables in order to increase level of normalization.
+
+ Type of relations:
+* OneToOne
+* OneToMany/ManyToOne
+* ManyToMany - needs additional table. The table usually has name like nameOfTable1_nameOfTable2. It contains pairs of foreign keys.
+
+ UML (unified modelling language )
+There are different types of UML diagrams.
+ERD (entity relational diagram) shows relations between tables.
+ERD in Intellij IDEA - right click on scheme (or highlighted tables),diagrams,show visualisation
+
+ JOINS
+* (INNER) JOIN - NOT NULL RECORDS FROM BOTH TABLES
+* CROSS JOIN - Cartesian Product ('��������� ������������')
+* LEFT (OUTER) JOIN  - ALL RECORDS FROM LEFT TABLE
+* RIGHT (OUTER) JOIN - ALL RECORDS FROM RIGHT TABLE
+* FULL (OUTER) JOIN - ALL RECORDS FROM BOTH TABLES
+
+INNER JOIN rejects all records which have null foreign key.
+
+CROSS JOIN is rarely used.
+CROSS JOIN can be used to add another column to result of query. Example:
+SELECT *
+FROM book
+         CROSS JOIN (SELECT count(*) total_amount_of_authors
+                     FROM author) t;
+
+ About concatenation with null
+SELECT 'test' || null; returns null
+SELECT concat('test',null); returns test
+coalesce change returned value, if it's null
+SELECT COALESCE(null, '0'), - returns 0
+       COALESCE(5, '0'); - returns 5
+
+ GROUP BY - here we define all columns that we have to show together with aggregate function
+Example:
+SELECT a.last_name, a.first_name, count(b.id)
+FROM author a
+         RIGHT JOIN book b on a.id = b.author_id
+GROUP BY a.last_name, a.first_name;
+
+SELECT count(*)
+FROM author a; - counts even null values
+SELECT count(a.id)
+FROM author a; - should be used (counts not nulls)
+
+ HAVING - filtering for aggregate functions. Example:
+SELECT a.last_name, a.first_name, count(b.id)
+FROM author a
+         RIGHT JOIN book b on a.id = b.author_id
+GROUP BY a.last_name, a.first_name
+HAVING count(b.id) > 2;
+
+ Window functions - very important and no small functionality. It requires separate practice
+ GROUP BY in example above returns us amount of books written by every author. But it doesnt allow us to get book names. Its not convenient.
+ What window functions give us:
+ 1) to display columns together with results of aggregate functions in one table
+SELECT a.last_name,
+       b.name,
+       count(b.id) OVER () total_amount_of_books,
+       max(b.pages) OVER () maximum_pages
+FROM author a
+         RIGHT JOIN book b on a.id = b.author_id
+ORDER BY a.last_name;
+ Without OVER() we cannot do this
+ 2) window functions are not only aggregate functions. We can rank, dense_rank and other
+ Example:
+SELECT a.last_name,
+       b.name,
+       b.pages,
+       rank() OVER (ORDER BY b.pages DESC),
+       dense_rank() OVER (ORDER BY b.pages DESC),
+--        dense_rank() OVER (ORDER BY b.pages DESC NULLS LAST),
+       max(b.pages) OVER () maximum_pages
+FROM author a
+         RIGHT JOIN book b on a.id = b.author_id
+ORDER BY b.pages DESC;
+3) with PARTITION BY we can use count(), rank(), max() in groups. For instance, rank of books of every author and so on. Example.
+SELECT a.last_name,
+       b.name,
+       b.pages,
+       dense_rank() OVER (PARTITION BY a.id ORDER BY b.pages DESC),
+       max(b.pages) OVER (PARTITION BY a.id ORDER BY b.pages DESC) maximum_pages
+FROM author a
+         RIGHT JOIN book b on a.id = b.author_id
+ORDER BY a.last_name ;
+
+VIEW
+From views we can only select records. We cannot insert, delete, update. But we can select records from tables, wy do we need views?
+- Because if we made view we need we can use SIMPLE queries.
+Views are made on the base of SELECT queries. Example
+CREATE VIEW view1 AS
+SELECT a.last_name,
+       b.name,
+       b.pages,
+       dense_rank() OVER (PARTITION BY a.id ORDER BY b.pages DESC),
+       max(b.pages) OVER (PARTITION BY a.id ORDER BY b.pages DESC) maximum_pages
+FROM author a
+         RIGHT JOIN book b on a.id = b.author_id
+ORDER BY a.last_name ;
+
+And then we can use queries like
+SELECT *
+FROM view1
+WHERE last_name = 'Dokins';
+
+Everytime when we SELECT from view, the complete query is carried out. Its not cached.
+
+MATERIALIZED VIEWS are cached VIEWS
+But because od caching we can miss last updates.
+to refresh data use REFRESH MATERIALISED VIEW view_name.
+
+How M-Views are used in practice
+* For statistics. They are refreshed for instance once per day by jobs. Selects from m-view are caried out much faster then from database itself.
+* we can create User with access rights only to our views.
+
+ Changing tables. ALTER
+Very simple (But columns with not null constraint are added in two steps). Example:
+ALTER TABLE IF EXISTS author
+    ADD COLUMN gender INT;
+UPDATE author
+SET gender = 1;
+ALTER TABLE IF EXISTS author
+    ALTER COLUMN gender SET NOT NULL;
