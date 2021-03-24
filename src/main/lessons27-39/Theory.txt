@@ -1,0 +1,205 @@
+
+    27. UNION, UNION ALL, SELECT, INTERSECT
+
+values ('A1'),
+       ('A2'),
+       ('B1'),
+       ('B2')
+INTERSECT
+values ('A1'),
+       ('A2');
+
+values ('A1'),
+       ('A2'),
+       ('B1'),
+       ('B2')
+    EXCEPT
+values ('A1'),
+       ('A2');
+
+SELECT seat_no
+FROM seat
+WHERE aircraft_id = 1
+    EXCEPT (SELECT seat_no
+            FROM ticket
+            where flight_id = 1);
+
+    28-29.INDEXES (B-TREE)
+
+ B-TREE - the most widespread type of indexes. B-tree is NOT Binary Tree!!
+Each node of B-tree can have 0 or n+1 children nodes.
+Search of B-tree is quit simple:
+-we start from Root node
+-we iterate through elements of each node
+-if element we searching for is greater than element in the node we move to next element of the node
+-if it equals   - RETURN link;
+-if it is less - we move level down(to child of left link)
+ Amount of elements in the node can be different and it's very important. I
+ It should not be more then one segment of our HDD, because we need less amount of readings from HDD to RAM.
+
+ INDEX is different file apart from our table. It contains links to records of our table.
+ So after we find element in index file we move to our table, and It takes time.
+ There are cluster indexes which contain more data in them and we need to move to tables.
+
+ PRIMARY KEY has B-tree index by default.
+ Even simple queries like selectById not always uses indexes. It depends on amount of records in table.
+ If it's small query planner decides not to use indexes to save time on moving to table.
+ Example of creation composite index:
+ CREATE UNIQUE INDEX unique_flight_id_seat_no_idx ON ticket (flight_id, seat_no);
+
+ Indexes can be unique or not, non unique ones work slower. Also order is important.
+ I we search by flight_id and seat_no (independently on order) index probably will be used , if we search by flight_id the same.
+ But if we search by seat_no it will not, because composite indexes are lice concatenated strings.
+
+ Selectivity = Unique elements (in the column)/ total rows.
+ Selectivity of ids are 1, that's why they are so god for indexes.
+
+ We should  not make more indexes than necessary, because in increases update and delete time.
+ Because in addition to tables we will have to update all indexes.
+
+  30. PLAN OF QUERY
+
+  EXPLAIN SELECT *
+  FROM TICKET; --only plan without query itself
+
+  result of the query is:
+  way of getting data + cost + width(bite length of one record in result)
+
+  In past rule-based optimisers were used. Now their place took cost based.
+  Now optimisers are choosing query plan by calculating costs (of different ways).
+  cost = page cost + cpu cost.
+  page cost (input-output) are cost of read/write to disc operations. One page (one segment) costs 1.
+  cpu costs are cost of cpu operations. 1 operation = 0.01 cost.
+
+  How to know how much pages are our table?
+  schema pg_catalog stores statistics on our DB. It has table pg_class.
+
+  SELECT *
+  FROM pg_class
+  WHERE relname = 'ticket';
+
+   here we can find:
+    * relpages
+    * reltuples - amount of records
+    * relkind (type - records or indexes)
+
+  Statistics is not always actual, because it is updated not every time our tables are updated.
+
+ How to calculate width for ticket table:
+
+id - BIGINT = 8 bytes
+flight_id - BIGINT = 8 bytes
+cost - NUMERIC = 8 bytes
+
+Sizes of text columns are found bu following query:
+SELECT avg(bit_length(passenger_no) / 8), --6
+       avg(bit_length(passenger_name) / 8), --28
+       avg(bit_length(seat_no) / 8) --2
+FROM ticket;
+
+8 + 6 + 28 + 8 + 2 + 8 = 60
+
+  Seq Scan - Full scan of the table.
+
+   31. PLAN OF QUERY (INDEXES)
+
+------------------------------------------
+CREATE TABLE test1
+(
+    id      SERIAL PRIMARY KEY,
+    number1 INT         NOT NULL,
+    number2 INT         NOT NULL,
+    value   VARCHAR(32) NOT NULL
+);
+
+CREATE INDEX test1_number1_idx ON test1(number1);
+CREATE INDEX test1_number2_idx ON test1(number2);
+
+INSERT INTO test1(number1, number2, value)
+SELECT random() * generate_series,
+       random() * generate_series,
+       generate_series
+FROM generate_series(1, 100000);
+
+EXPLAIN
+SELECT *
+FROM test1;
+
+SELECT relname,
+       reltuples,
+       relkind,
+       relpages
+FROM pg_class
+WHERE relname like 'test1%';
+
+analyze test1; --upgrade statistics
+
+explain
+SELECT number2
+FROM test1
+WHERE number1 = 1000;
+-------------------------------------------
+
+INDEX ONLY SCAN - THE FASTEST(no transition to table)
+INDEX SCAN - 2nd FAST(with transition to table)
+BITMAP (INDEX/HEAP) SCAN - using of bit mask
+FULLSCAN - the worst case
+
+BITMAP can unite several filter condition through OR or AND operators.
+But in case of OR we can just kill all our performance ()
+
+
+   32. PLAN OF QUERY (JOINES)
+
+CREATE TABLE test2
+(
+    id       SERIAL PRIMARY KEY,
+    test1_id INT REFERENCES test1 (id),
+    number1  INT         NOT NULL,
+    number2  INT         NOT NULL,
+    value    VARCHAR(32) NOT NULL
+);
+
+
+INSERT INTO test2 (test1_id, number1, number2, value)
+SELECT id,
+       random() * number1,
+       random() * number2,
+       value
+FROM test1;
+
+CREATE INDEX test2_number1_idx ON test2 (number1);
+CREATE INDEX test2_number2_idx ON test2 (number2);
+
+
+
+--nested loop (when we return small amount of records)
+EXPLAIN ANALYSE
+SELECT *
+FROM test1
+         JOIN test2 t ON test1.id = t.test1_id
+LIMIT 100;
+--hash join - better works with huge amount of data
+EXPLAIN ANALYSE
+SELECT *
+FROM test1
+         JOIN test2 t ON test1.id = t.test1_id;
+
+
+--merge join - the best way, but we need both keys to be sorted (Foreign key can be sorted in subquery)
+
+EXPLAIN ANALYSE
+SELECT *
+FROM test1 t1
+         JOIN (SELECT * FROM test2 ORDER BY test1_id) t2 ON t1.id = t2.test1_id;
+
+
+-- but better way for merge join is creation of index in foreign key
+CREATE INDEX test2_test1_id_idx ON test2 (test1_id);
+analyse test2;
+
+EXPLAIN ANALYSE
+SELECT *
+FROM test1 t1
+         JOIN test2 t2 ON t1.id = t2.test1_id;
+

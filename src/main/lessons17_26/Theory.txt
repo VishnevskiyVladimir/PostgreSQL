@@ -132,3 +132,4 @@ UPDATE author
 SET gender = 1;
 ALTER TABLE IF EXISTS author
     ALTER COLUMN gender SET NOT NULL;
+
